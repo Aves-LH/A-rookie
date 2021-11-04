@@ -1,0 +1,128 @@
+MediaStreamTrack : audio track  video track
+
+一个track由source和sink组成，source给track提供数据
+
+source和sink构成一个track，多个track构成一个MediaStream
+
+
+
+拉流端数据流向
+
+video_receive_stream.h中接收数据，使用video_stream_decoder.h中进行解码，解码完成后，数据到达webrtc_video_engine.cc中的onFrame进行渲染
+
+
+webrtc音频数据流向（Windows）
+
+AudioDevice相关
+
+AudioDeviceModule::Create()  -->  AudioDeviceModule::CreateForTest()  -->
+
+AudioDeviceModuleImpl::AudioDeviceModuleImpl()  -->
+
+AudioDeviceWindowsCore::CoreAudioIsSupported()  --> 
+
+AudioDeviceWindowsCore::AudioCoreWindowsCore() --> 
+
+AudioDeviceWindowsCore::Init()  --> 
+
+AudioDeviceWindowsCore::_EnumerateEndpointDevicesAll()  --> 
+
+AudioDeviceWindowsCore::RecordingDevices()  --> 
+
+AudioDeviceWindowsCore::_RefreshDeviceList() --> 
+
+AudioDeviceWindowsCore::_DeviceListCount() -->
+
+AudioDeviceWindowsCore::_DeviceListCount() --> 
+
+AudioDeviceWindowsCore::RecordingIsAvailable() --> 
+
+AudioDeviceWindowsCore::InitRecording() -->
+
+AudioDeviceWindowsCore::StopRecording()  -->
+
+AudioDeviceWindowsCore::PlayoutIsAvailable()  -->
+
+AudioDeviceWindowsCore::InitPlayout()  -->
+
+AudioDeviceWindowsCore::StopPlayout()  -->
+
+AudioDeviceWindowsCore::Terminate()  --> 
+
+AudioDeviceModuleImpl::AttachAudioBuffer()  --> 
+
+AudioDeviceBuffer::SetRecordingSampleRate()  -->
+
+AudioDeviceBuffer::SetPlayoutSampleRate()  -->
+
+AudioDeviceBuffer::SetRecordingChannels()  -->
+
+AudioDeviceBuffer::SetPlayoutChannels()  -->
+
+
+音频处理、引擎相关
+AudioProcessingImpl::AudioProcessingImpl()  -->
+
+AudioProcessingImpl::Initialize()  -->
+
+AudioProcessingImpl::InitializeLocked()  -->
+
+AudioProcessingImpl::InitializeEchoController()  -->
+
+WebRtcVoiceEngine::WebRtcVoiceEngine()  -->
+
+WebRtcVoiceEngine::Init()  --> 
+
+音频设备相关步骤  -->
+
+设置参数，注册回调
+
+
+音频channel相关
+WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel()  -->
+
+WebRtcVoiceMediaChannel::SetOptions()  -->
+
+WebRtcVoiceEngine::ApplyOptions()  -->
+
+BaseChannel::BaseChannel()  //create channel for audio  -->
+
+BaseChannel::Init_w()  -->  VoiceChannel::SetLocalContent_w()  -->
+
+WebRtcVoiceMediaChannel::SetRecvParameters()  -->
+
+WebRtcVoiceMediaChannel::SetRecvCodecs()  -->
+
+VoiceChannel::UpdateMediaSendRecvState_w()  -->
+
+BaseChannel::DisableMedia_w()  -->
+
+VoiceChannel::UpdateMediaSendRecvState_w()  -->
+
+BaseChannel::DisableMedia_w()  -->
+
+.
+.
+.
+
+WebRtcVoiceMediaChannel::AddRecvStream()  -->
+
+NetEqImpl::NetEqImpl()  -->
+
+NetEqImpl::FlushBuffers()  -->
+
+AudioCodingModuleImpl::AudioCodingModuleImpl()  -->
+
+AudioReceiveStream::AudioReceiveStream()  -->
+
+WebRtcVoiceMediaChannel::SetRawAudioSink()  -->
+
+BaseChannel::ChannelWritable_n()  -->
+
+VoiceChannel::UpdateMediaSendRecvState_w()  -->
+
+
+
+音频RTP包发送
+RTPSenderAudio::SendAudio()  -->
+

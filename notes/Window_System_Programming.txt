@@ -1,0 +1,22 @@
+围绕窗口画边框代码：
+
+	HDC hdc = GetWindowDC(NULL);
+	RECT rect;
+	GetWindowRect(hWnd, &rect);
+
+	HRGN hrgn = CreateRectRgn(rect.left + 30, rect.top + 30, rect.right + 30, rect.bottom + 30);
+
+	HBRUSH hBrush = (HBRUSH)CreateSolidBrush(RGB(0, 255, 0));
+	HPEN hpen;
+	//hpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+	//// DC 选择画笔
+	//SelectObject(hdc, hpen);
+	//SetDCBrushColor(hdc, RGB(200, 0, 0));
+	//SetDCPenColor(hdc, RGB(200, 0, 0));
+	HBRUSH image_brush_red = CreateSolidBrush(RGB(255, 0, 0));
+	HRGN hrgn_rect = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom + 180);
+	//最后两个参数为帧区域宽度，帧区域厚度
+	FrameRgn(hdc, hrgn_rect, image_brush_red, 5, 5);
+	//Rectangle(hdc, rect.left + 30, rect.top + 30, rect.right + 30, rect.bottom + 30);
+	RECT rect1 = { rect.left + 20, rect.top, rect.right + 30, rect.bottom + 30 };
+	//FrameRect(hdc, &rect1, hBrush);

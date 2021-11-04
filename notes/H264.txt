@@ -1,0 +1,131 @@
+H264码流
+
+
+SPS：Sequence Parameter Set 序列参数集	H.264码流的第一个NALU
+
+保存了一组编码视频序列（Coded video sequence）的全局参数，即原始视频的一帧一帧的像素诗句经过编码之后的结构组成的序列
+
+每一帧的编码后数据所依赖的参数保存于图像参数集中
+
+一般情况SPS和PPS的NALU通常位于整个码流的起始位置。
+
+特殊情况下，码流中间也可能出现这两种结构，主要原因如下：
+1、解码器需要在码流中间开始解码
+2、编码器在编码过程中改变了码流参数（如分辨率）
+
+语法元素含义：
+
+（1）profile_idc：
+	标识当前H.264码流的profile（H.264的SPS中，第一个字节标识profile_idc）
+	H.264中三种常用的profile：baseline profile = 66、main profile = 77、extended profile = 88
+
+（2）level_idc：
+	标识当前码流的level。编码的level定义了某种条件下的最大视频分辨率、最大视频帧率等参数
+
+（3）seq_parameter_set_id：
+	标识当前的序列参数及的id，通过该值，图像参数集PPS中可以引用其代表的SPS中的参数
+
+（4）log2_max_frame_num_minus4
+	用于计算MaxFrameNum的值，公式为MaxFrameNum = 2^(log2_max_frame_num_minus4 + 4)
+	MaxFrameNum是frame_num的上限值，frame_num是图像序号的一种表示方法，在帧间编码中常用作一种参考帧标记的手段
+
+（5）pic_order_cnt_type
+	表示解码picture order count（POC）的方法。POC是另一种计量图像序号的方式，与frame_num计算方法不同。该语法元素取值为0、1、2
+
+（6）log2_max_pic_order_cnt_lsb_minus4
+	用于计算MaxPicOrderCntLsb的值，该值表示POC的上限。MaxPicOrderCntLsb = 2^(log2_max_pic_order_cnt_lsb_minus4 + 4)
+
+（7）max_num_ref_frames
+	表示参考帧的最大数目
+
+（8）gaps_in_frame_num_value_allowed_flag
+	标志位，说明frame_num中是否允许不连续的值
+
+（9）pic_width_in_mbs_minus1
+	用于计算图像的宽度。单位为宏块个数，因此图像的实际宽度为frame_width = 16 * (pic_width_in_mbs_minux1 + 1)
+
+（10）pic_height_in_map_units_minus1
+	使用PicHeightInMapUnits来度量视频中一帧图像的高度，该值并非图像明确的以像素或宏块为单位的高度，而需要考虑该宏块是帧编码或场编码
+	PicHeightInMapUnits = pic_height_in_map_units_minus1 + 1
+
+（11）frame_mbs_only_flag
+	标志位，说明宏块的编码方式
+	0：宏块可能为帧编码或场编码。PicHeightInMapUnits表示一场数据按宏块计算的高度
+	1：所有宏块采用帧编码。PicHeightInMapUnits表示一帧数据按宏块计算的高度。FrameheightInMbs = ( 2 − frame_mbs_only_flag ) * PicHeightInMapUnits
+
+（12）mb_adaptive_frame_field_flag
+	标志位，说明是否采用了宏块级的帧、场自适应编码
+	0：不存在帧编码和场编码之间的切换
+	1：宏块可能在帧编码和场编码模式之间进行选择
+
+（13）direct_8x8_inference_flag
+	标志位，用于B_Skip、B_Direct模式运动矢量的推导计算
+
+（14）frame_cropping_flag
+	标志位，说明是否需要对输出的图像帧进行裁剪
+
+（15）vui_parameters_present_flag
+	标志位，说明SPS中是否存在VUI信息
+
+
+
+PPS：Picture Parameter Set 图像参数集		H.264码流的第二个NALU nal_unit_type为8
+
+语法元素含义：
+（1）pic_parameter_set_id：
+	表示当前PPS的id，某个PPS在码流中会被相应的slice引用，引用PPS的方式就是在Slice header中保存PPS的id值，取值的范围[0, 255]
+
+（2）seq_parameter_set_id：
+	表示当前PPS所引用的激活的SPS的id，通过这种方式，PPS中也可以取到对应SPS中的参数，取值范围[0, 31]
+
+（3）entropy_coding_mode_flag
+	熵编码模式标志，该标志位标识码流中熵编码/解码选择的算法。对于部分语法元素，在不同的编码配置下，选择的熵编码方式不同
+	如：在一个宏块语法元素中，宏块类型mb_type的语法元素描述符为“ue(v) | ae(v)”，在baseline profile等设置下采用指数哥伦布编码，在main profile等设置下采用CABAC编码
+	标志位entropy_coding_mode_flag的作用就是控制这种算法选择
+	0：选择左边的算法，通常为指数哥伦布编码或者CAVLC
+	1：选择右边的算法，通常为CABAC
+
+（4）bottom_field_pic_order_in_frame_present_flag
+	标志位，用于标识另外条带头中两个语法元素delta_pic_ordercnt_bottom和delta_pic_order_cn是否存在的标志
+	这两个语法元素表示了某一帧的底场的POC的计算方法
+
+（5）num_slice_groups_minus1
+	表示某一帧中slice group的个数。
+	0：一帧中所有的slice都属于一个slice group。slice group是一帧中宏块的组合方法
+
+（6）num_ref_idx_I0_default_active_minux1、num_ref_idx_I0_default_active_minus1
+	表示当Slice Header中的num_ref_idx_active_override_flag标志位为0时，P/SP/B slice的语法元素
+	num_ref_idx_I0_active_minus1和num_ref_idx_l1_active_minus1的默认值
+
+（7）weighted_pred_flag
+	标志位，表示在P/SP slice中是否开启加权预测
+
+（8）weighted_bipred_idc
+	表示在B slice中加权预测的方法，取值范围[0, 2]
+	0：默认加权预测
+	1：显示加权预测
+	2：隐式加权预测
+
+（9）pic_init_qp_minus26、pic_init_qs_minus26
+	表示初始的量化参数。实际的量化参数由该参数、slice header中的slice_qp_delta/slice_qs_delta计算得到
+
+（10）chroma_qp_index_offset
+	用于计算色度分量的量化参数，取值范围为[-12,12]。
+
+（11）deblocking_filter_control_present_flag
+	标识位，用于表示Slice header中是否存在用于去块滤波器控制的信息。
+	0：slice header中没有相应的信息。
+	1：slice header中包含去块滤波相应的信息
+
+（12）constrained_intra_pred_flag
+	0：表示I宏块可以使用来自Inter类型宏块的信息。
+	1：表示I宏块在进行帧内预测时只能使用来自I和SI类型宏块的信息
+
+（13）redundant_pic_cnt_present_flag
+	标识位，用于表示Slice header中是否存在redundant_pic_cnt语法元素。
+	0：slice header中没有相应的信息。
+	1：slice header中包含redundant_pic_cnt
+
+
+
+IDR：Instantaneous Decoding Refresh 即时解码刷新	H.264码流的第三个NALU
