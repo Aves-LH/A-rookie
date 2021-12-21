@@ -125,7 +125,7 @@ https://patents.google.com/patent/CN104123949B/zh
 https://blog.csdn.net/ice_ly000/article/details/103162838
 https://juejin.cn/post/6844904150849814542
 
-webRTC架构分析-线程模型
+webRTC架构分析-线程模型  ---  陈子兴
 https://zhuanlan.zhihu.com/p/136070941
 
 webRTC音视频同步
@@ -265,6 +265,9 @@ https://www.sohu.com/a/467056576_99980919
 
 Qt信号槽
 https://blog.51cto.com/u_9291927/2070398
+
+webrtc 中有关 socket 运行机制以及 stun 收发过程 及 Candidates 生成流程分析
+https://blog.csdn.net/freeabc/article/details/106000923
 
 1、v8引擎技术分享
 2、相关设计文档上传git

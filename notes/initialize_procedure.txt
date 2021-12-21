@@ -1,0 +1,230 @@
+initalize procedure
+
+VloudImpl::initGlobals
+	
+	VldClientManager::InitializeMediaOption
+
+		VldMediaResourceFactory::Initialize
+
+			CreatePeerConnectionFactory（create_peerconnection_factory.cc）
+
+				CreateModularPeerConnectionFactory（peer_connection_factory.cc）
+
+					MethodCall0<PeerConnectionFactory, bool> call(pc_factory.get(), &PeerConnectionFactory::Initialize);
+						||
+						||
+						v
+					PeerConnectionFactory::Initialize()
+
+
+VldClient::JoinRoomInternal
+	
+	VldSingleDataChannel::Connect
+
+		VldWebRTCPeer::CreateStream
+
+			VldPeerConnection::SetPC()  ==>  vld_pc->SetPC(media_resource_factory_->CreatePeerConnection(*rtc_config, nullptr, nullptr, vld_pc.get()));
+
+			VldMediaResourceFactory::CreatePeerConnection
+
+				PeerConnectionFactory::CreatePeerConnection(
+    					const PeerConnectionInterface::RTCConfiguration& configuration,
+    					std::unique_ptr<cricket::PortAllocator> allocator,
+    					std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
+    					PeerConnectionObserver* observer)
+
+					***PeerConnectionFactory::CreatePeerConnection(
+    						const PeerConnectionInterface::RTCConfiguration& configuration,
+    						PeerConnectionDependencies dependencies)
+
+			
+
+PeerConnection::SetLocalDescription
+	
+	PeerConnection::ApplyLocalDescription
+
+		PeerConnection::PushdownTransportDescription
+
+			JsepTransportController::SetLocalDescription
+
+				JsepTransportController::ApplyDescription_n
+
+					JsepTransportController::MaybeCreateJsepTransport
+
+						JsepTransportController::CreateIceTransport
+
+
+JsepTransportController::MaybeStartGathering()
+
+	P2PTransportChannel::MaybeStartGathering()
+
+		PortAllocator::CreateSession
+
+			BasicPortAllocator::CreateSessionInternal
+
+		BasicPortAllocatorSession::StartGettingPorts()	==>    Post(MSG_CONFIG_START)
+		
+		BasicPortAllocatorSession::OnMessage	接收MSG_CONFIG_START
+
+			BasicPortAllocatorSession::GetPortConfigurations()
+
+				BasicPortAllocatorSession::ConfigReady	    ==>    Post(MSG_CONFIG_READY)
+
+					BasicPortAllocatorSession::OnMessage    接收MSG_CONFIG_READY
+
+						BasicPortAllocatorSession::OnConfigReady
+
+							BasicPortAllocatorSession::AllocatePorts()	    ==>    Post(MSG_ALLOCATE)
+
+							BasicPortAllocatorSession::OnMessage    接收MSG_ALLOCATE
+
+								BasicPortAllocatorSession::OnAllocate()
+
+									BasicPortAllocatorSession::DoAllocate
+
+										AllocationSequence::Init()	==>    创建套接字
+
+										AllocationSequence::Start()	==>    Post(MSG_ALLOCATION_PHASE)
+
+										AllocationSequence::OnMessage	==>    接收MSG_ALLOCATION_PHASE
+
+											AllocationSequence::CreateUDPPorts
+	
+												static std::unique_ptr<UDPPort> Create（stun_port.h）
+											
+													UDPPort::Init()（stun_port.h）
+
+											BasicPortAllocatorSession::AddAllocatedPort
+
+												UDPPort::PrepareAddress()（stun_port.h）
+
+													UDPPort::OnLocalAddressReady
+
+														UDPPort::MaybePrepareStunCandidate()
+
+															UDPPort::SendStunBindingRequests()
+
+																UDPPort::SendStunBindingRequest    ==>    发送stun绑定命令
+
+
+socket接收数据流程
+
+MessageQueue::Get
+
+	if (!ss_->Wait(static_cast<int>(cmsNext), process_io))	==>    PhysicalSocketServer::Wait
+
+		PhysicalSocketServer::WaitEpoll
+
+			ProcessEvents（physical_socket_server.cc）
+
+				dispatcher->OnEvent	==>    SocketDispatcher::OnEvent
+
+					SignalReadEvent(this)发出信号
+
+					触发AsyncUDPSocket::OnReadEvent
+
+						SignalReadPacket发出信号
+
+						触发UDPPort::OnReadPacket
+
+							StunRequestManager::CheckResponse
+
+								StunBindingRequest::OnResponse
+
+									UDPPort::OnStunBindingRequestSucceeded
+									
+										Port::AddAddress
+
+											Port::FinishAddingAddress
+
+												SignalCandidateReady发出信号
+
+												触发BasicPortAllocatorSession::OnCandidateReady
+
+													SignalCandidatesReady发出信号
+
+													触发P2PTransportChannel::OnCandidatesReady
+
+														SignalCandidateGathered发出信号
+
+														触发JsepTransportController::OnTransportCandidateGathered_n
+
+															SignalIceCandidatesGathered发出信号
+
+															触发PeerConnection::OnTransportControllerCandidatesGathered
+
+																PeerConnection::OnIceCandidate
+
+																	Observer()->OnIceCandidate		==>    抛到VldPeerConnection
+
+BasicPortAllocatorSession::OnAllocationSequenceObjectsCreated()
+
+	BasicPortAllocatorSession::MaybeSignalCandidatesAllocationDone()
+
+		SignalCandidatesAllocationDone发出信号
+
+		触发P2PTransportChannel::OnCandidatesAllocationDone
+
+			SignalGatheringState发出信号
+
+			触发JsepTransportController::OnTransportGatheringState_n
+
+
+
+webrtc 视频流接收流程分析从 socket 接收数据一直到放入 jitterbuffer 内整个处理流程与环节
+
+下面讲述的流程建立在双方 candidate 交换之后, stun 成功之后，就开始交换 candidate，
+选取最合适的 candidate 然后建立链接，就可以互发互收音视频数据了。
+
+
+UDPPort::OnReadPacket ---> 
+    if (Connection* conn = GetConnection(remote_addr)) {
+        conn->OnReadPacket(data, size, packet_time_us);
+    }
+
+
+Connection的由来
+
+PeerConnection::SetRemoteDescription
+	
+	PeerConnection::ApplyRemoteDescription
+
+		PeerConnection::UseCandidatesInSessionDescription
+
+			PeerConnection::UseCandidate
+
+				JsepTransportController::AddRemoteCandidates
+
+					JsepTransport::AddRemoteCandidates
+
+						P2PTransportChannel::AddRemoteCandidate
+
+							P2PTransportChannel::FinishAddingRemoteCandidate
+
+								P2PTransportChannel::CreateConnections
+
+									P2PTransportChannel::CreateConnection
+
+										TurnPort::CreateConnection
+
+											P2PTransportChannel::AddConnection
+												connection->SignalReadPacket.connect(this, &P2PTransportChannel::OnReadPacket);
+												P2PTransportChannel::OnReadPacket 调用 DtlsTransport::OnReadPacket 
+												因为 ice_transport_ 就是 P2PTransportChannel
+												ice_transport_->SignalReadPacket.connect(this, &DtlsTransport::OnReadPacket);（dtls_transport.cc）
+
+												Port::AddOrReplaceConnection
+												
+													auto ret = connections_.insert(std::make_pair(conn->remote_candidate().address(), conn));
+													  connections_ 内保存的就是一个 ProxyConnection  对象，ProxyConnection 派生于 Connection
+
+ice_transport_->SignalReadPacket.connect(this, &DtlsTransport::OnReadPacket);（dtls_transport.cc）
+
+DtlsTransport::OnReadPacket
+	SSL握手成功，正式开始处理数据
+	DtlsTransport::HandleDtlsPacket
+
+		downward_->OnPacketReceived(data, size);	==>	downward_即StreamInterfaceChannel		DtlsTransport::SetupDtls()中对downward_进行设置
+		StreamInterfaceChannel::OnPacketReceived
+
+

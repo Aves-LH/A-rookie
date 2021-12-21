@@ -1,0 +1,18 @@
+VldStream::webrtc_peer_	==>	rtc::scoped_refptr<VldWebRTCPeer> webrtc_peer_;
+	||
+	||
+	v
+VldWebRTCPeer::vld_peer_connection_	==>	rtc::scoped_refptr<VldPeerConnection> vld_peer_connection_;
+	||
+	||
+	v
+VldPeerConnection::pc_	==>	rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc_;
+
+peer_connection_interface.h
+PeerConnectionInterface
+
+peer_connection.cc
+PeerConnection::call_	=>	std::unique_ptr<Call> call_ RTC_GUARDED_BY(worker_thread());
+
+call.cc
+Call::video_send_streams_	=>	std::set<VideoSendStream*> video_send_streams_ RTC_GUARDED_BY(send_crit_);
