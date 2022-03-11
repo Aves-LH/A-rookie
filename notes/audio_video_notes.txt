@@ -20,6 +20,15 @@ PPI：
 FPS：
 	Frame per second，视频每秒钟播放的画面数量
 
+SAR：
+	Sample Aspect Ratio, 采样宽高比
+
+DAR:
+	Display Aspect Ratio, 显示宽高比（16:9, 4:3 ...）
+
+PAR：
+	Pixel Aspect Ratio, 像素宽高比
+
 
 假设一个以颜色格式为YUV420来存储的视频文件，分辨率是1280x720，帧率是25fps，那么1分钟的数据量（字节数）是多少？
 

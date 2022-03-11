@@ -1,0 +1,12 @@
+ffmpeg中tbc tbr tbn代表的含义：
+
+tbn is the time base in AVStream that has come from the container, I
+think. It is used for all AVStream time stamps.
+
+tbc is the time base in AVCodecContext for the codec used for a
+particular stream. It is used for all AVCodecContext and related time
+stamps.
+
+tbr is guessed from the video stream and is the value users want to see
+when they look for the video frame rate, except sometimes it is twice
+what one would expect because of field rate versus frame rate.

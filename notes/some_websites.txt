@@ -269,6 +269,20 @@ https://blog.51cto.com/u_9291927/2070398
 webrtc 中有关 socket 运行机制以及 stun 收发过程 及 Candidates 生成流程分析
 https://blog.csdn.net/freeabc/article/details/106000923
 
+ffmpeg 命令
+https://blog.csdn.net/kingvon_liwei/article/details/79271361
+
+Windows 编译 ffmpeg
+https://www.jianshu.com/p/53ecc4dbe7d0
+
+ffmpeg 时间基、时间戳概念
+https://www.imooc.com/article/91381
+
+https://blog.csdn.net/qq_43580193/article/details/107722742
+
+音视频同步
+http://www.samirchen.com/ffmpeg-tutorial-5/
+
 1、v8引擎技术分享
 2、相关设计文档上传git
 3、跟进TRTC版本变化
