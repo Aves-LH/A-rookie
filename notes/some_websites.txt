@@ -271,6 +271,7 @@ https://blog.csdn.net/freeabc/article/details/106000923
 
 ffmpeg 命令
 https://blog.csdn.net/kingvon_liwei/article/details/79271361
+https://www.cnblogs.com/bigben0123/p/14168067.html
 
 Windows 编译 ffmpeg
 https://www.jianshu.com/p/53ecc4dbe7d0
@@ -282,6 +283,15 @@ https://blog.csdn.net/qq_43580193/article/details/107722742
 
 音视频同步
 http://www.samirchen.com/ffmpeg-tutorial-5/
+
+ffmpeg 基础编程
+https://www.cnblogs.com/ssyfj/p/14579909.html
+https://www.jianshu.com/p/0792f6bbc9f6
+https://segmentfault.com/a/1190000017980746
+https://juejin.cn/post/7033666766202994724
+
+h264
+https://www.freesion.com/article/46181181418/
 
 1、v8引擎技术分享
 2、相关设计文档上传git
