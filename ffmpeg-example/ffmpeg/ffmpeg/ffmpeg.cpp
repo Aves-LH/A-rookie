@@ -10,7 +10,10 @@ extern "C"
 #include "libavdevice/avdevice.h"
 #include "libavutil/log.h"
 #include "libavutil/error.h"
-#include <libavformat/avio.h>
+#include "libavformat/avio.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/time.h"
+#include "libavutil/timestamp.h"
 };
 
 #pragma comment(lib, "avformat.lib")
@@ -604,9 +607,515 @@ int TransMP4ToH264(const char* src, const char* dst) {
 	return 0;
 }
 
+void log_packet(const AVFormatContext* fmt_ctx, const AVPacket* pkt, const char* tag)
+{
+    AVRational* time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+
+    printf("%s: pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+        tag,
+        av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
+        av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
+        av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
+        pkt->stream_index);
+}
+
+int TransMP4toFLV(const char* src, const char* dst) {
+    AVOutputFormat* ofmt = NULL;    //输出格式
+    AVFormatContext* ifmt_ctx = NULL, * ofmt_ctx = NULL;    //输入、输出上下文
+
+    AVPacket pkt;    //数据包
+    const char* in_filename, * out_filename;
+
+    int ret, i;
+    int stream_idx = 0;
+    int* stream_mapping = NULL;        //数组:用来存放各个流通道的新索引值（对于不要的流，设置-1,对于需要的流从0开始递增
+    int stream_mapping_size = 0;    //输入文件中流的总数量
+
+    av_log_set_level(AV_LOG_INFO);
+    av_register_all();
+
+    //打开输入多媒体文件，获取上下文格式
+    ret = avformat_open_input(&ifmt_ctx, src, NULL, NULL);//第三个参数强制指定AVFormatContext中AVInputFormat，一般设置为NULL，自动检测。第四个为附加选项
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t open input file %s \n", in_filename);
+        goto fail;
+    }
+
+    //检索输入文件的流信息
+    ret = avformat_find_stream_info(ifmt_ctx, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Fail to retrieve input stream information!\n");
+        goto fail;
+    }
+
+    //打印关于输入或输出格式的详细信息，例如持续时间，比特率，流，容器，程序，元数据，边数据，编解码器和时基。
+    av_dump_format(ifmt_ctx, 0, src, 0);    //第一个0表示流的索引值，第二个0表示是输入文件
+
+    //为输出上下文环境分配空间
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, dst);    //第二个参数：指定AVFormatContext中的AVOutputFormat，用于确定输出格式。如果指定为NULL，可以设定后两个参数（format_name或者filename）由FFmpeg猜测输出格式。第三个参数为文件格式比如.flv,也可以通过第四个参数获取
+    if (!ofmt_ctx) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t create output context!\n");
+        ret = AVERROR_UNKNOWN;
+        goto fail;
+    }
+
+    //记录输入文件的stream通道数目
+    stream_mapping_size = ifmt_ctx->nb_streams;
+    //为数组分配空间，sizeof(*stream_mapping)是分配了一个int空间，为stream_mapping分配了stream_mapping_size个int空间
+    stream_mapping = (int*)av_mallocz_array(stream_mapping_size, sizeof(*stream_mapping));
+    if (!stream_mapping) {
+        ret = AVERROR(ENOMEM);    //内存不足
+        goto fail;
+    }
+
+    //输出文件格式
+    ofmt = ofmt_ctx->oformat;
+    //遍历输入文件中的每一路流，对于每一路流都要创建一个新的流进行输出
+    for (i = 0; i < stream_mapping_size; i++) {
+        AVStream* out_stream = NULL;    //输出流
+        AVStream* in_stream = ifmt_ctx->streams[i];    //输入流获取
+        AVCodecParameters* in_codecpar = in_stream->codecpar;    //获取输入流的编解码参数
+
+        //只保留音频、视频、字母流;对于其他流丢弃（实际上是设置对应的数组值为-1）
+        if (in_codecpar->codec_type != AVMEDIA_TYPE_AUDIO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_VIDEO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE) {
+            stream_mapping[i] = -1;
+            continue;
+        }
+        //对于输出流的index重新编号，从0开始,写入stream_mapping数组对应空间中去
+        stream_mapping[i] = stream_idx++;
+
+        //重点：为输出格式上下文，创建一个对应的输出流
+        out_stream = avformat_new_stream(ofmt_ctx, NULL);    //第二个参数为对应的视频所需要的编码方式，为NULL则自动推导
+        if (!out_stream) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to allocate output stream\n");
+            ret = AVERROR_UNKNOWN;
+            goto fail;
+        }
+
+        //直接将输入流的编解码参数拷贝到输出流中
+        ret = avcodec_parameters_copy(out_stream->codecpar, in_codecpar);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to copy codec parameters\n");
+            goto fail;
+        }
+
+        //详见：https://juejin.cn/post/6854573210579501070
+        //avformat_write_header写入封装容器的头信息时，会检查codec_tag：
+        //若AVStream->codecpar->codec_tag有值，则会校验AVStream->codecpar->codec_tag是否在封装格式（比如MAP4）支持的codec_tag列表中，若不在，就会打印错误信息；
+        //若AVStream->codecpar->codec_tag为0，则会根据AVCodecID从封装格式的codec_tag列表中，找一个匹配的codec_tag。
+        out_stream->codecpar->codec_tag = 0;
+    }
+
+    //打印要输出多媒体文件的详细信息
+    av_dump_format(ofmt_ctx, 0, dst, 1);    //1表示输出文件
+
+    if (!(ofmt->flags & AVFMT_NOFILE)) {    //查看文件格式状态，如果文件不存在（未打开），则开启文件
+        ret = avio_open(&ofmt_ctx->pb, dst, AVIO_FLAG_WRITE);    //打开文件，可写
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Can`t open output file %s!\n", out_filename);
+            goto fail;
+        }
+    }
+
+    //开始写入新的多媒体文件头部
+    ret = avformat_write_header(ofmt_ctx, NULL);    //NULL为附加选项
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t write format header into file: %s\n", out_filename);
+        goto fail;
+    }
+
+    //循环写入多媒体数据
+    while (1) {
+        AVStream* in_stream, * out_stream;    //获取输入输出流
+        //循环读取每一帧
+        ret = av_read_frame(ifmt_ctx, &pkt);
+        if (ret < 0) {    //读取完成，退出喜欢
+            break;
+        }
+        //获取输入流在stream_mapping中的数组值，看是否保留
+        in_stream = ifmt_ctx->streams[pkt.stream_index];    //先获取所属的流的信息
+        if (pkt.stream_index >= stream_mapping_size || stream_mapping[pkt.stream_index] < 0) {    //判断是否是我们想要的音频、视频、字幕流，不是的话就跳过
+            av_packet_unref(&pkt);
+            continue;
+        }
+        //需要对流进行重新编号（因为原来输入流部分被跳过），输出流编号应该从0开始递增;索引就是我们上面保存的数组值
+        pkt.stream_index = stream_mapping[pkt.stream_index];    //按照输出流的编号对pakcet进行重新编号
+        //根据上面的索引，获取ofmt_cxt输出格式上下文对应的输出流，进行处理
+        out_stream = ofmt_ctx->streams[pkt.stream_index];
+
+        //开始对pakcet进行时间基的转换，因为音视频的采用率不同，所以不进行转换，会导致时间不同步。最终使得音频对应音频刻度，视频对应视频刻度
+        //PTS(Presentation Time Stamp, 显示时间戳)，是渲染用的时间戳，播放器会根据这个时间戳进行渲染播放
+        //DTS(Decoding Time Stamp, 解码时间戳)，解码时间戳，在视频packet进行解码成frame的时候会使用到
+        pkt.pts = av_rescale_q_rnd(pkt.pts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.dts = av_rescale_q_rnd(pkt.dts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
+        pkt.pos = -1;
+
+        log_packet(ofmt_ctx, &pkt, "out");
+
+        //将处理好的packet写入输出文件中
+        ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error muxing packet\n");
+            break;
+        }
+        av_packet_unref(&pkt);
+    }
+
+    av_write_trailer(ofmt_ctx);    //写入文件尾部
+fail:
+    //关闭输入文件格式上下文
+    avformat_close_input(&ifmt_ctx);
+    //关闭输出文件
+    if (ofmt_ctx && !(ofmt_ctx->flags & AVFMT_NOFILE))
+        avio_closep(&ofmt_ctx->pb);
+
+    avformat_free_context(ofmt_ctx);    //关闭输出格式上下文
+    av_freep(&stream_mapping);    //释放数组空间
+    if (ret < 0 && ret != AVERROR_EOF) {    //异常退出
+        av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+        return 1;
+    }
+    return 0;
+}
+
+int cut_video(char* in_filename, char* out_filename, int starttime, int endtime) {
+    AVOutputFormat* ofmt = NULL;    //输出格式
+    AVFormatContext* ifmt_ctx = NULL, * ofmt_ctx = NULL;    //输入、输出上下文
+
+    AVPacket pkt;    //数据包
+
+    int ret, i;
+    int stream_idx = 0;
+    int* stream_mapping = NULL;        //数组:用来存放各个流通道的新索引值（对于不要的流，设置-1,对于需要的流从0开始递增
+    int stream_mapping_size = 0;    //输入文件中流的总数量
+
+     //打开输入多媒体文件，获取上下文格式
+    ret = avformat_open_input(&ifmt_ctx, in_filename, NULL, NULL);//第三个参数强制指定AVFormatContext中AVInputFormat，一般设置为NULL，自动检测。第四个为附加选项
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t open input file %s \n", in_filename);
+        goto fail;
+    }
+
+    //检索输入文件的流信息
+    ret = avformat_find_stream_info(ifmt_ctx, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Fail to retrieve input stream information!\n");
+        goto fail;
+    }
+
+    //打印关于输入或输出格式的详细信息，例如持续时间，比特率，流，容器，程序，元数据，边数据，编解码器和时基。
+    av_dump_format(ifmt_ctx, 0, in_filename, 0);    //第一个0表示流的索引值，第二个0表示是输入文件
+
+    //为输出上下文环境分配空间
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);    //第二个参数：指定AVFormatContext中的AVOutputFormat，用于确定输出格式。如果指定为NULL，可以设定后两个参数（format_name或者filename）由FFmpeg猜测输出格式。第三个参数为文件格式比如.flv,也可以通过第四个参数获取
+    if (!ofmt_ctx) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t create output context!\n");
+        ret = AVERROR_UNKNOWN;
+        goto fail;
+    }
+
+    //记录输入文件的stream通道数目
+    stream_mapping_size = ifmt_ctx->nb_streams;
+    //为数组分配空间，sizeof(*stream_mapping)是分配了一个int空间，为stream_mapping分配了stream_mapping_size个int空间
+    stream_mapping = (int*)av_mallocz_array(stream_mapping_size, sizeof(*stream_mapping));
+    if (!stream_mapping) {
+        ret = AVERROR(ENOMEM);    //内存不足
+        goto fail;
+    }
+
+    //输出文件格式
+    ofmt = ofmt_ctx->oformat;
+    //遍历输入文件中的每一路流，对于每一路流都要创建一个新的流进行输出
+    for (i = 0; i < stream_mapping_size; i++) {
+        AVStream* out_stream = NULL;    //输出流
+        AVStream* in_stream = ifmt_ctx->streams[i];    //输入流获取
+        AVCodecParameters* in_codecpar = in_stream->codecpar;    //获取输入流的编解码参数
+
+        //只保留音频、视频、字母流;对于其他流丢弃（实际上是设置对应的数组值为-1）
+        if (in_codecpar->codec_type != AVMEDIA_TYPE_AUDIO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_VIDEO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE) {
+            stream_mapping[i] = -1;
+            continue;
+        }
+        //对于输出流的index重新编号，从0开始,写入stream_mapping数组对应空间中去
+        stream_mapping[i] = stream_idx++;
+
+        //重点：为输出格式上下文，创建一个对应的输出流
+        out_stream = avformat_new_stream(ofmt_ctx, NULL);    //第二个参数为对应的视频所需要的编码方式，为NULL则自动推导
+        if (!out_stream) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to allocate output stream\n");
+            ret = AVERROR_UNKNOWN;
+            goto fail;
+        }
+
+        //直接将输入流的编解码参数拷贝到输出流中
+        ret = avcodec_parameters_copy(out_stream->codecpar, in_codecpar);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to copy codec parameters\n");
+            goto fail;
+        }
+
+        //详见：https://juejin.cn/post/6854573210579501070
+        //avformat_write_header写入封装容器的头信息时，会检查codec_tag：若AVStream->codecpar->codec_tag有值，则会校验AVStream->codecpar->codec_tag是否在封装格式（比如MAP4）支持的codec_tag列表中，若不在，就会打印错误信息；
+        //若AVStream->codecpar->codec_tag为0，则会根据AVCodecID从封装格式的codec_tag列表中，找一个匹配的codec_tag。
+        out_stream->codecpar->codec_tag = 0;
+    }
+
+    //打印要输出多媒体文件的详细信息
+    av_dump_format(ofmt_ctx, 0, out_filename, 1);    //1表示输出文件
+
+    if (!(ofmt->flags & AVFMT_NOFILE)) {    //查看文件格式状态，如果文件不存在（未打开），则开启文件
+        ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);    //打开文件，可写
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Can`t open output file %s!\n", out_filename);
+            goto fail;
+        }
+    }
+
+    //开始写入新的多媒体文件头部
+    ret = avformat_write_header(ofmt_ctx, NULL);    //NULL为附加选项
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t write format header into file: %s\n", out_filename);
+        goto fail;
+    }
+
+    //--------------seek定位---------
+    ret = av_seek_frame(ifmt_ctx, -1, starttime * AV_TIME_BASE, AVSEEK_FLAG_ANY);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Can`t seek input file: %s\n", in_filename);
+        goto fail;
+    }
+
+    //循环写入多媒体数据
+    while (1) {
+        AVStream* in_stream, * out_stream;    //获取输入输出流
+        //循环读取每一帧
+        ret = av_read_frame(ifmt_ctx, &pkt);
+        if (ret < 0) {    //读取完成，退出喜欢
+            break;
+        }
+        //获取输入流在stream_mapping中的数组值，看是否保留
+        in_stream = ifmt_ctx->streams[pkt.stream_index];    //先获取所属的流的信息
+        if (pkt.stream_index >= stream_mapping_size || stream_mapping[pkt.stream_index] < 0) {    //判断是否是我们想要的音频、视频、字幕流，不是的话就跳过
+            av_packet_unref(&pkt);
+            continue;
+        }
+        //---------判断是否到结束时间----------
+        if (av_q2d(in_stream->time_base) * pkt.pts > endtime) {    //av_q2d获取该流的时间基
+            av_free_packet(&pkt);
+            break;
+        }
+
+        //需要对流进行重新编号（因为原来输入流部分被跳过），输出流编号应该从0开始递增;索引就是我们上面保存的数组值
+        pkt.stream_index = stream_mapping[pkt.stream_index];    //按照输出流的编号对pakcet进行重新编号
+        //根据上面的索引，获取ofmt_cxt输出格式上下文对应的输出流，进行处理
+        out_stream = ofmt_ctx->streams[pkt.stream_index];
+
+        //开始对pakcet进行时间基的转换，因为音视频的采用率不同，所以不进行转换，会导致时间不同步。最终使得音频对应音频刻度，视频对应视频刻度
+        //PTS(Presentation Time Stamp, 显示时间戳)，是渲染用的时间戳，播放器会根据这个时间戳进行渲染播放
+        //DTS(Decoding Time Stamp, 解码时间戳)，解码时间戳，在视频packet进行解码成frame的时候会使用到
+        pkt.pts = av_rescale_q_rnd(pkt.pts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.dts = av_rescale_q_rnd(pkt.dts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
+        pkt.pos = -1;
+
+        //将处理好的packet写入输出文件中
+        ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error muxing packet\n");
+            break;
+        }
+        av_packet_unref(&pkt);
+    }
+
+    av_write_trailer(ofmt_ctx);    //写入文件尾部
+fail:
+    //关闭输入文件格式上下文
+    avformat_close_input(&ifmt_ctx);
+    //关闭输出文件
+    if (ofmt_ctx && !(ofmt_ctx->flags & AVFMT_NOFILE))
+        avio_closep(&ofmt_ctx->pb);
+
+    avformat_free_context(ofmt_ctx);    //关闭输出格式上下文
+    av_freep(&stream_mapping);    //释放数组空间
+    if (ret < 0 && ret != AVERROR_EOF) {    //异常退出
+        av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+        return 1;
+    }
+    return 0;
+}
+
+int PushStream(const char* src, const char* dst) {
+	AVOutputFormat* ofmt = nullptr;
+	AVFormatContext* ifmt_ctx = nullptr;
+	AVFormatContext* ofmt_ctx = nullptr;
+	AVPacket pkt;
+	int video_index = 0;
+    int frame_index = 0;
+	int ret = 0;
+
+	av_register_all();
+	avformat_network_init();
+
+	// Input
+	ret = avformat_open_input(&ifmt_ctx, src, nullptr, nullptr);
+	if (ret < 0) {
+		printf("Failed to open input file!\n");
+		av_log(nullptr, AV_LOG_ERROR, "Failed to open input file!\n");
+		if (ifmt_ctx) {
+			avformat_close_input(&ifmt_ctx);
+			return -1;
+		}
+	}
+
+	ret = avformat_find_stream_info(ifmt_ctx, nullptr);
+	if (ret < 0) {
+		printf("Failed to find stream info!\n");
+		av_log(nullptr, AV_LOG_ERROR, "Failed to find stream info!\n");
+		if (ifmt_ctx) {
+			avformat_close_input(&ifmt_ctx);
+			return -1;
+		}
+	}
+
+	for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
+		if (ifmt_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+			video_index = i;
+			break;
+		}
+	}
+
+	av_dump_format(ifmt_ctx, 0, src, 0);
+
+	// Output
+	avformat_alloc_output_context2(&ofmt_ctx, ofmt, "flv", dst); // RTMP
+	if (!ofmt_ctx) {
+		printf("Failed to create output format context!\n");
+		av_log(nullptr, AV_LOG_ERROR, "Failed to create output format context!\n");
+		if (ifmt_ctx) {
+			avformat_close_input(&ifmt_ctx);
+		}
+		if (ofmt_ctx) {
+			avformat_free_context(ofmt_ctx);
+		}
+		return -1;
+	}
+
+	ofmt = ofmt_ctx->oformat;
+	for (int i = 0; i < ofmt_ctx->nb_streams; i++) {
+		AVStream* in_stream = ofmt_ctx->streams[i];
+		AVStream* out_stream = avformat_new_stream(ofmt_ctx, in_stream->codec->codec);
+		if (!out_stream) {
+			printf("Failed to alloc output stream!\n");
+			av_log(nullptr, AV_LOG_ERROR, "Failed to alloc output stream!\n");
+			return -1;
+		}
+
+		ret = avcodec_copy_context(out_stream->codec, in_stream->codec);
+		if (ret < 0) {
+			printf("Failed to copy context from input stream to output stream!\n");
+			av_log(nullptr, AV_LOG_ERROR, "Failed to copy context from input stream to output stream!\n");
+			return -1;
+		}
+
+		out_stream->codec->codec_tag = 0;
+		if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {
+			out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+		}
+	}
+	
+	av_dump_format(ofmt_ctx, 0, dst, 1);
+	if (!(ofmt->flags & AVFMT_NOFILE)) {
+		ret = avio_open(&ofmt_ctx->pb, dst, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            printf("Failed to open output file!\n");
+            av_log(nullptr, AV_LOG_ERROR, "Failed to open output file!\n");
+            return -1;
+        }
+	}
+
+    ret = avformat_write_header(ofmt_ctx, nullptr);
+    if (ret < 0) {
+        printf("Failed to write header to file!\n");
+        av_log(nullptr, AV_LOG_ERROR, "Failed to write header to file!\n");
+        return -1;
+    }
+
+    int start_time = av_gettime();
+    while (1) {
+        AVStream* in_stream = nullptr;
+        AVStream* out_stream = nullptr;
+
+        ret = av_read_frame(ifmt_ctx, &pkt);
+        if (ret < 0) {
+            printf("Failed to read frame!\n");
+            av_log(nullptr, AV_LOG_ERROR, "Failed to read frame!\n");
+            break;
+        }
+
+        if (pkt.pts == AV_NOPTS_VALUE) {
+            AVRational time_base1 = ifmt_ctx->streams[video_index]->time_base;
+            int64_t calc_duration = (double)AV_TIME_BASE / av_q2d(ifmt_ctx->streams[video_index]->r_frame_rate);
+            //Parameters
+            pkt.pts = (double)(frame_index * calc_duration) / (double)(av_q2d(time_base1) * AV_TIME_BASE);
+            pkt.dts = pkt.pts;
+            pkt.duration = (double)calc_duration / (double)(av_q2d(time_base1) * AV_TIME_BASE);
+        }
+        //Important:Delay
+        if (pkt.stream_index == video_index) {
+            AVRational time_base = ifmt_ctx->streams[video_index]->time_base;
+            AVRational time_base_q = { 1,AV_TIME_BASE };
+            int64_t pts_time = av_rescale_q(pkt.dts, time_base, time_base_q);
+            int64_t now_time = av_gettime() - start_time;
+            if (pts_time > now_time)
+                av_usleep(pts_time - now_time);
+
+        }
+
+        in_stream = ifmt_ctx->streams[pkt.stream_index];
+        out_stream = ofmt_ctx->streams[pkt.stream_index];
+        /* copy packet */
+        //转换PTS/DTS（Convert PTS/DTS）
+        pkt.pts = av_rescale_q_rnd(pkt.pts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.dts = av_rescale_q_rnd(pkt.dts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
+        pkt.pos = -1;
+        //Print to Screen
+        if (pkt.stream_index == video_index) {
+            printf("Send %8d video frames to output URL\n", frame_index);
+            frame_index++;
+        }
+        //ret = av_write_frame(ofmt_ctx, &pkt);
+        ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+
+        if (ret < 0) {
+            printf("Error muxing packet\n");
+            break;
+        }
+
+        av_free_packet(&pkt);
+    }
+    av_write_trailer(ofmt_ctx);
+
+    avformat_close_input(&ifmt_ctx);
+    /* close output */
+    if (ofmt_ctx && !(ofmt->flags & AVFMT_NOFILE))
+        avio_close(ofmt_ctx->pb);
+    avformat_free_context(ofmt_ctx);
+    if (ret < 0 && ret != AVERROR_EOF) {
+        printf("Error occurred.\n");
+        return -1;
+    }
+    return 0;
+}
+
 int main()
 {
-	GetAudioFromVideo("qwe.mp4", "asd.aac");
+	TransMP4toFLV("qwe.mp4", "qwe.flv");
 
 	return 0;
 }
