@@ -293,6 +293,12 @@ https://juejin.cn/post/7033666766202994724
 h264
 https://www.freesion.com/article/46181181418/
 
+基础
+https://blog.csdn.net/hi_zhengjian/article/details/122041721
+
+h264 帧边界识别
+http://www.360doc.com/content/13/0913/15/13084517_314201133.shtml
+
 1、v8引擎技术分享
 2、相关设计文档上传git
 3、跟进TRTC版本变化

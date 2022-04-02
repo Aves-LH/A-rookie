@@ -131,6 +131,52 @@ PPS：Picture Parameter Set 图像参数集		H.264码流的第二个NALU nal_uni
 IDR：Instantaneous Decoding Refresh 即时解码刷新	H.264码流的第三个NALU
 
 
+一般来说，在H．264中，RTP封装应该遵循几个设计原则：
+1、较低的开销，因此MTU的尺寸应该限制在100—64K字节范围内。
+2、易于区分分组的重要性，而不必对分组内的数据解码。
+3、应能检测到数据的类型，而不需解码整个数据流，并能根据编码流之间的相关性丢弃无用数据，如网关应能检测A型分割的丢失，并能丢弃相应的B型和C型分割。
+4、应支持将一个NALU拆分为若干个RTP包：不同大小的输入图片决定了NALU的长度可能会大于MTU，只有拆分后才会避免IP层在传输时出现分片。
+5、支持将多个NALU汇集在一个RTP分组中，即在一个RTP包中传输超过一个NALU，当多个图片的编码输出小于M1IU时就考虑此模式，以提高网络传输效率。
+
+
+网络传输时为什么要将 H264 数据封装成 RTP 包？
+	更方便分包和进行丢包处理，因为 H264 中 NALU 的存在，封装成 RTP 包在 NALU 前加个包头即可（最理想情况下）
+	
+RTP打包模式
+	主要分为三种模式：单一NALU模式、分片模式、组合模式，实际中前两种用的比较多。
+
+	(1)单一NALU模式
+	一个RTP包仅由一个完整的NALU组成。这种情况下RTP NAL头类型字段和原始的H.264的NALU头类型字段是一样的。
+	适合条件是当NALU的长度小于RTP包长减去12时。
+
+
+
+	特别NALU type 值为 7 和 8 的NALU分别为序列参数集（sps）和图像参数集（pps）。
+
+	(2)组合封包模式
+	即可能是由多个 NAL 单元组成一个 RTP 包. 分别有4种组合方式: STAP-A, STAP-B, MTAP16, MTAP24.
+	那么这里的类型值分别是 24, 25, 26 以及 27.适合条件当 NALU 的长度特别小时, 可以把几个 NALU 单元封在一个 RTP 包中.
+
+
+
+	(3)分片封包模式Fragmentation Units (FUs)
+	用于把一个 NALU 单元封装成多个 RTP 包. 存在两种类型 FU-A 和 FU-B. 类型值分别是 28 和 29。
+	适合条件当 NALU 的长度超过 MTU 时, 就必须对 NALU 单元进行分片封包. 
+
+
+其中，VCL层是对核心算法引擎，宏块及片的语法级别的定义，他最终输出编码完的数据 SODB；
+
+	1.压缩：预测（帧内预测和帧间预测）-> DCT变化和量化 -> 比特流编码； 
+	2.切分数据，主要为了第三步。这里一点，网上看到的“切片（slice）”、“宏块（macroblock）”是在VCL中的概念，
+	一方面提高编码效率和降低误码率、另一方面提高网络传输的灵活性。
+ 	3.输出编码完的数据 SODB（SODB：String Of Data Bits （原始数据比特流, 长度不一定是8的倍数，故需要补齐））
+
+
+NAL层定义片级以上的语法级别（如序列参数集和图像参数集，针对网络传输），
+同时支持以下功能：独立片解码，起始码唯一保证，SEI以及流格式编码数据传送，
+NAL层将SODB打包成RBSP然后加上NAL头，组成一个NALU（NAL单元）；
+
+
 一帧图片经过 H.264 编码器之后，就被编码为一个或多个片（slice）。<编码阶段,由VCL实现>
 而装载着这些片（slice）的载体，就是 NALU 
  NALU 跟片的关系（slice）<由NAL实现>
@@ -201,7 +247,9 @@ IDR：Instantaneous Decoding Refresh 即时解码刷新	H.264码流的第三个N
 H.264的两种打包/封装方法：字节流AnnexB格式 和 AVCC格式 （只有这两种）
 在H264用于网络发送时，要封装成RTP格式！！！
 
-1.AnnexB流结构：
+H.264格式
+
+一.AnnexB流结构  ---  用于实时播放：
 	使用start code分隔NAL(start code为三字节或四字节，0x000001或0x00000001，一般是四字节)；
 	SPS和PPS按流的方式写在头部。
 	开始前缀（00000001或000001）＋ NALU数据 绝大部分编码器的默认输出格式
@@ -267,5 +315,208 @@ AU分隔：
 	一个单独的NALU包、或者甚至一个VCL NALU包都不意味着是一个独立的帧，
 	一帧数据可以被分割成几个NALU，一个或多个NALU组成了一个Access Units(AU)，
 	AU包含了一个完整的帧。把帧分割成几个独立的NALU需要耗费许多CPU资源，所以分割帧数据并不经常使用。
+
+
+
+特殊的NALU类型：SPS和PPS
+SPS和PPS存储了编解码需要一些图像参数。
+
+AnnexB格式每个NALU都包含起始码，且通常会周期性的在关键帧之前重复SPS和PPS （在I帧之前）
+
+所以解码器可以从视频流随机点开始进行解码，实时的流格式
+
+
+
+H.264 帧数据解析：
+
+0000 0001 （start code) 67 (SPS) 64 000a ac72 8444 2684 0000 03 (防竞争字节) 00 0400 0003 (防竞争字节) 00ca 3c48 
+9611 8000 0000 01 （start code) 68 （PPS） e843 8f13 2130 0000 01 （start code） 65 （I帧） 8881 0005 4e7f 87df 
+61a5 8b95 eea4 e938 b76a 306a 71b9 5560 0b76 2eb5 0ee4 8059 27b8 67a9 6337 5e82 2055 fbe4 6ae9 3735 72e2 
+2291 9e4d ff60 86ce 7e42 b795 ce2a e126 be87 7384 26ba 1636 f4e6 9f17 dad8 6475 54b1 f345 0c0b 3c74 b39d 
+bceb 5373 87c3 0e62 4748 62ca 59eb 863f 3afa 86b5 bfa8 6d06 1650 82c4 ce62 9e4e e64c c730 3ede a10b d883 
+0bb6 b828 bca9 eb77 43fc 7a17 9485 21ca 376b 3095 b546 7730 60b7 12d6 8cc5 5485 29d8 69a9 6f12 4e71 dfe3 
+e2b1 6b6b bf9f fb2e 5730 a969 76c4 46a2 dffa 91d9 5074 551d 4904 5a1c d686 687c b661 486c 96e6 124c 27ad 
+bac7 5199 8ed0 f0ed 8ef6 6579 79a6 12a1 95db c8ae e3b6 35e6 8dbc 48a3 7faf 4a28 8a53 e27e 6808 9f67 7798 
+52db 5084 d65e 25e1 4a99 5834 c711 d643 ffc4 fd9a 4416 d1b2 fb02 dba1 8969 34c2 3255 98f9 9bb2 313f 4959 
+0c06 8cdb a5b2 9d7e 122f d087 9444 e40a 76ef 992d 9118 3950 3b29 3bf5 2c97 7348 9183 b0a6 f34b 702f 1c8f 
+3b78 23c6 aa86 4643 1dd7 2a23 5e2c d948 0af5 f52c d1fb 3ff0 4b78 37e9 45dd 72cf 8035 c395 07f3 d906 e54a 
+5876 036c 8120 6245 6544 73bc fec1 9f31 e5db 895c 6b79 d868 90d7 26a8 a188 8681 dc9a 4f40 a523 c7de be6f 
+76ab 7916 5121 6783 2ef3 d627 1a42 c294 d15d 6cdb 4a7a e2cb 0bb0 680b be19 5900 50fc c0bd 9df5 f5f8 a817 
+19d6 b3e9 74ba 50e5 2c45 7bf9 93ea 5af9 a930 b16f 5b36 241e 8d55 57f4 cc67 b265 6aa9 3626 d006 b8e2 e373 
+8bd1 c01c 5215 cab5 ac60 3e36 42f1 2cbd 9977 aba8 a9a4 8e9c 8b84 de73 f091 2997 aedb afd6 f85e 9b86 b3b3 
+03b3 ac75 6fa6 1169 2f3d 3ace fa53 8660 956c bbc5 4ef3
+
+
+
+二、AVCC   ---   用于存储
+	另一个存储H.264流的方式是AVCC格式，在这种格式中，
+	每一个NALU包都加上了一个指定其长度(NALU包大小)的前缀(in big endian format大端格式)，
+	这种格式的包非常容易解析，但是这种格式去掉了Annex B格式中的字节对齐特性，
+	而且前缀可以是1、2或4字节，这让AVCC格式变得更复杂了，
+	指定前缀字节数(1、2或4字节)的值保存在一个头部对象中(流开始的部分)，这个头通常称为’extradata’或者’sequence header’。（重点）
+
+
+1.AVCC格式了解：
+	使用NALU长度（固定字节，通常为4字节，取决于头部的NALULengthSizeMinusOne字段）分隔NAL；
+	在头部包含extradata(或sequence header)的结构体。（extradata包含分隔的字节数、SPS和PPS）
+
+	解码器配置参数在一开始就配置好了（所以我们不能像视频网站中的实时播放一样可以在中间修改参数，比如：帧率，画面），
+	系统可以很容易的识别NALU的边界，不需要额外的起始码，减少了资源的浪费，同时可以在播放时调到视频的中间位置。
+
+	这种格式通常被用于可以被随机访问的多媒体数据。如存储在硬盘的文件：MP4、MKV通常用AVCC格式来存储。
+
+	AVCC格式不使用起始码(start code)作为NALU的分界，这种格式在每个NALU前都加上一个大端格式的前缀（1、2、4字节，代表NALU长度）
+
+	所以在解析AVCC格式的时候需要将指定的前缀字节数的值保存在一个头部对象中，
+	这个都通常称为extradata或者sequence header。同时，SPS和PPS数据也需要保存在extradata或者叫’sequence header’中。
+
+AVCC 码流结构
+	
+	| NALU 前缀 | NALU | NALU 前缀 | NALU |。。。。。。
+
+	AVCC中的NALU格式，与AnnexB格式一致。当我们将AVCC转AnnexB时，如果检测到NALU Type = 5关键帧，
+	那么在关键帧前面加上SPS NALU和PPS NALU即可。
+
+	虽然AVCC格式不使用起始码，防竞争字节还是有的。所以我们在转换AVCC与AnnexB格式的时候，
+	不用考虑防竞争字节。因为NALU内部是一致的。
+
+
+
+三、RTP格式   ---   用于网络发送
+
+	RTP封装= 12字节固定RTP包头 + 载荷（NALU）
+	
+	补充：针对IP网络的RTP打包方式。为原始的NAL打包格式，就是开始的若干字节（1，2，4字节）是NAL的长度，
+	而不是start_code,此时必须借助某个全局的数据来获得编码器的profile,level,PPS,SPS等信息才可以解码。
+
+
+RTP 协议实际上是由实时传输协议RTP（Real-time Transport Protocol）和实时传输控制协议RTCP（Real-time Transport Control Protocol）两部分组成。
+
+RTP 协议基于多播或单播网络为用户提供连续媒体数据的实时传输服务；     
+RTCP 协议是 RTP 协议的控制部分，用于实时监控数据传输质量，为系统提供拥塞控制和流控制。
+
+
+NALU header结构图
+NALU header由一个字节组成, 它的语法如下:
+
+F: 1 个比特.forbidden_zero_bit. 在 H.264 规范中规定了这一位必须为 0.
+
+NRI: 2 个比特.nal_ref_idc. 取 00 ~ 11, 似乎指示这个 NALU 的重要性, 如00的NALU解码器可以丢弃它而不影响图像的回放. 不过一般情况下不太关心这个属性.
+
+Type: 5 个比特.nal_unit_type. 这个 NALU 单元的类型. 但是在h264中只有 1~23 是有效的值.而其他的24~29在RTP封包采用”组合封包模式“和”分片封包模式“时所用的type类型，而非“单一NAL单元模式”时。
+
+简述如下:
+
+  0     没有定义
+  1-23  NAL单元  单个 NAL 单元包.
+  24    STAP-A   单一时间的组合包
+  25    STAP-B   单一时间的组合包
+  26    MTAP16   多个时间的组合包
+  27    MTAP24   多个时间的组合包
+  28    FU-A     分片的单元
+  29    FU-B     分片的单元
+  30-31 没有定义
+
+RTP单次发送有上限????2种RTP打包：拆包or不拆包
+	在IP网络中，当要传输的IP报文大小超过【最大传输单元MTU】时就会产生IP分片情况。
+	（若交给底层协议拆包容易出问题→→→主动拆分NALU再打包成RTP包后发送）
+
+H264视频流的RTP封包
+	1.RTP打包原则
+	RTP的包长度必须要小于MTU(最大传输单元)，IP协议中MTU的最大长度为1500字节。
+	除去IP报头（20字节）、UDP报头（8字节）、RTP头（12字节），
+	所有RTP有效载荷（即NALU内容）的长度不得超过1460字节。
+
+	2.RTP协议的报文结构 
+	开始12个八进制出现在每个RTP包中，而CSRC标识列表仅出现在混合器插入时。各段含义如下： 
+	①版本（V） 
+		version (V): 2 bits   2位，标识RTP版本,协议初始版本为0，RFC3550中规定的版本号为2。。 
+	②填充标识（P） 
+		padding (P): 1 bit   1位，如设置填充位，在包末尾包含了额外的附加信息，它不属于有效载荷。
+		附加信息的最后一个字节表示额外附加信息的长度（包含该字节本身）。
+		该字段之所以 存在是因为某些加密算法需要固定大小的填充字，或为在底层协议数据单元中携带几个RTP包。 
+	③扩展（X） 
+		extension (X): 1 bit           1位，如果该位被设置，则在固定的头部后存在一个扩展头部，格式定义在RFC3550 5.3.1节。 
+	④CSRC计数（CC） 
+		CSRC count (CC): 4 bits    4位，CSRC计数包括紧接在固定头后标识CSRC个数。 
+	⑤标记（M） 
+		marker (M): 1 bit     1位，标记解释由设置定义，目的在于允许重要事件在包流中标记出来。
+		设置可定义其他标示位，或通过改变位数量来指定没有标记位，该位的功能依赖于 profile的定义。
+		profile可以改变该位的长度，但是要保持marker和payload type总长度不变（一共是8 bit）。。
+
+		或M：标示位，1 位。如果当前 NALU为一个接入单元最后的那个NALU，那么将M位置 1；
+		或者当前RTP 数据包为一个NALU 的最后的那个分片时（NALU 的分片在后面讲述），M位置 1。
+		其余情况下M 位保持为 0。
+	⑥载荷类型（PT） 
+		payload type (PT): 7 bits   7位，记录后面资料使用哪种 Codec ， receiver 端找出相应的 decoder 解碼出來，
+		该位标记着RTP packet所携带信息的类型，标准类型列出在RFC3551中。
+		如果接收方不能识别该类型，必须忽略该packet。 
+	⑦系列号 
+		sequence number:16 bits  16位，系列号随每个RTP数据包发送后而增加1，
+		接收方可以根据该序列号重新排列数据包顺序，或者探测包损失。
+		系列号初值是随机的，使对加密的文本攻击更加困难。 
+	⑧时间戳
+		timestamp: 32 bits    32位，时标反映RTP数据包中第一个八进制数的采样时刻，
+		采样时刻必须从单调、线性增加的时钟导出，以允许同步与抖动计算。
+		时标可以让receiver端知道在正确的时间将资料播放出来。
+		实际中当采用”分片封包模式“打包RTP时，当一个NALU打包完毕时，时间戳更一次。
+
+
+
+1、单一NALU的RTP包
+对于 NALU 的长度小于 MTU 大小的包, 一般采用单一 NAL 单元模式.
+
+	对于一个原始的 H.264 NALU 单元常由 [Start Code] [NALU Header] [NALU Payload] 三部分组成, 
+	其中 Start Code 用于标示这是一个NALU 单元的开始, 必须是 "00 00 00 01" 或 "00 00 01", NALU 头仅一个字节, 
+	其后都是 NALU 单元内容. 打包时去除 "00 00 01" 或 "00 00 00 01" 的开始码, 把其他数据封包的 RTP 包即可.
+
+如有一个 H.264 的 NALU 是这样的:
+	[00 00 00 01 67 42 A0 1E 23 56 0E 2F ... ]       这是一个序列参数集 NAL 单元. [00 00 00 01] 是四个字节的开始码, 
+					         67 是 NALU 头, 42 开始的数据是 NALU 内容.
+封装成 RTP 包将如下:
+
+	[ RTP Header ] [ 67 42 A0 1E 23 56 0E 2F ]
+即只要去掉 4 个字节的开始码就可以了.
+
+2、组合NALU的RTP包
+	当 NALU 的长度特别小时, 可以把几个 NALU 单元封在一个 RTP 包中.
+
+例：如有一个 H.264 的 NALU 是这样的:
+	[00 00 00 01 67 42 A0 1E 23 56 0E 2F ... ]  [00 00 00 01 68 42 B0 12 58 6A D4 FF ... ]
+封装成 RTP 包将如下:
+	[ RTP Header ] [78 (STAP-A头，占用1个字节)] [第一个NALU长度 (占用两个字节)] [ 67 42 A0 1E 23 56 0E 2F ] [第二个NALU长度 (占用两个字节)] [68 42 B0 12 58 6A D4 FF ... ]
+
+3、分片NALU的RTP包：FU_indicator和FU_head（RTP分包时的包头）
+	当NALU的长度超过MTU时,就必须对NALU单元进行分片封包.也称为Fragmentation Units(FUs).
+	FU-A的分片格式：数据比较大的H264视频包，被RTP分片发送。12字节的RTP头后面跟随的就是FU-A分片
+	FU_indicator： F  禁止位 NRI 重要标识位????即拆包的nalu自身的NRI  ----   F与NRI 保存了 NALU的前3位 type RTP打包头类型，FU-A时type=28
+	FU_header：S　　开始位　1表示分片NAL单元的开始，反之=0E　　结束位　1表示分片NAL单元的结束，反之=0。
+	R　　保留位　必须为0，接收者必须忽略该位。type　NALU数据类型 ????NALU_header　　----　　保存了 NALU 类型（即NALU的后5位）
+
+如有一个 H.264 的 NALU 是这样的:
+	[00 00 00 01 65 42 A0 1E 23 56 0E 2F ...  02 17 C8 FD F1 B9 C7 53 59 72 ... CB FF FF F4 1A D5 C4 18 A8 ... F1 B9 C7 1D A5 FA 13 0B ...]
+封装成 RTP 包将如下（注意：下面去掉了开始码和NALU头部，但是在FU_header的type存放了NALU数据类型）
+
+	[ RTP Header ] [ 7C 85 42 A0 1E 23 56 0E 2F ...]  [ RTP Header ] [ 7C 05 02 17 C8 FD F1 B9 C7 53 59 72 ...]  [ RTP Header ] [ 7C 05 CB FF FF F4 1A D5 C4 18 A8 ...]  [ RTP Header ] [ 7C 45 F1 B9 C7 1D A5 FA 13 0B ...]
+拆包和解包：
+发送端—拆包：NAL_header与分片后的FU的单元头有如下关系：      NAL_header前三位为FU_indicator的前三位      NAL_header后五位为FU_header的后五位 接收端—解包：将所有的分片包组合还原成原始的NAl包      nal_unit_type = (fu_indicator & 0xe0) | (fu_header & 0x1f)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
