@@ -299,6 +299,31 @@ https://blog.csdn.net/hi_zhengjian/article/details/122041721
 h264 帧边界识别
 http://www.360doc.com/content/13/0913/15/13084517_314201133.shtml
 
-1、v8引擎技术分享
-2、相关设计文档上传git
-3、跟进TRTC版本变化
+H264 格式解析
+https://www.365seal.com/y/elnWo2g0nr.html
+https://blog.51cto.com/u_15127623/4743851
+
+音视频基础   ---   音频编码格式
+https://zhuanlan.zhihu.com/p/69901270
+
+数字图像处理
+https://niuyuanyuanna.github.io/2018/07/12/computer_version/imgProcession/#%E6%95%B0%E5%AD%97%E5%9B%BE%E5%83%8F%E5%A4%84%E7%90%86%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E5%8F%8A%E6%96%B9%E6%B3%95
+
+音频编码器
+https://juejin.cn/post/6888216271322611725
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
