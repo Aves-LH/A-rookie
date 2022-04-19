@@ -312,14 +312,17 @@ https://niuyuanyuanna.github.io/2018/07/12/computer_version/imgProcession/#%E6%9
 音频编码器
 https://juejin.cn/post/6888216271322611725
 
+RTP 封包
+https://blog.csdn.net/xipiaoyouzi/article/details/52996041
 
+SPS PPS 详解
+https://zhuanlan.zhihu.com/p/27896239
 
+ffmpeg 解码
+https://zhuanlan.zhihu.com/p/345530242
 
-
-
-
-
-
+RTMP 协议详解
+https://www.cnblogs.com/jimodetiantang/p/8974075.html
 
 
 
