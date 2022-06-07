@@ -1,0 +1,25 @@
+#define C_W 10
+#define C_H 17
+#define T___   0X0
+#define BORD   0x0
+#define X___   0xFFFF
+
+static short cursor_pixel[C_W * C_H] = {
+   BORD, T___, T___, T___, T___, T___, T___, T___, T___, T___,
+   BORD, BORD, T___, T___, T___, T___, T___, T___, T___, T___,
+   BORD, X___, BORD, T___, T___, T___, T___, T___, T___, T___,
+   BORD, X___, X___, BORD, T___, T___, T___, T___, T___, T___,
+   BORD, X___, X___, X___, BORD, T___, T___, T___, T___, T___,
+   BORD, X___, X___, X___, X___, BORD, T___, T___, T___, T___,
+   BORD, X___, X___, X___, X___, X___, BORD, T___, T___, T___,
+   BORD, X___, X___, X___, X___, X___, X___, BORD, T___, T___,
+   BORD, X___, X___, X___, X___, X___, X___, X___, BORD, T___,
+   BORD, X___, X___, X___, X___, X___, X___, X___, X___, BORD,
+   BORD, X___, X___, X___, X___, X___, BORD, BORD, BORD, BORD,
+   BORD, X___, X___, BORD, X___, X___, BORD, T___, T___, T___,
+   BORD, X___, BORD, T___, BORD, X___, X___, BORD, T___, T___,
+   BORD, BORD, T___, T___, BORD, X___, X___, BORD, T___, T___,
+   T___, T___, T___, T___, T___, BORD, X___, X___, BORD, T___,
+   T___, T___, T___, T___, T___, BORD, X___, X___, BORD, T___,
+   T___, T___, T___, T___, T___, T___, BORD, BORD, T___, T___
+};

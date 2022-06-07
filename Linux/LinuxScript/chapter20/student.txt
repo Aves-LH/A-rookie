@@ -1,0 +1,5 @@
+ID	Name	Gender	Mark
+1	Aves	M	100
+2	Tony	M	80
+3	John	M	90
+

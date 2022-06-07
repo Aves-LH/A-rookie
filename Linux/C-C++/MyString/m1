@@ -1,0 +1,17 @@
+#this is a make file
+
+src=$(wildcard *.c)
+obj=$(patsubst %.c , %.o , $(src))
+
+ALL:main.out
+
+main.out:$(obj)
+	gcc $^ -o $@
+
+%.o:%.c
+	gcc -c $< -o $@ 
+
+clean:
+	-rm -rf $(obj)
+
+#.PHONY:clean ALL
