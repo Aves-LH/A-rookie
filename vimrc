@@ -1,3 +1,9 @@
+scriptencoding utf-8
+
+set fileencodings=ucs-bom,utf-8,utf-16,gbk,big5,gb18030,latin1,IOS-8859
+
+set fileencoding=utf-8
+
 syntax on
 
 " 语法高亮

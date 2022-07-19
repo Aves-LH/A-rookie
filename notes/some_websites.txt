@@ -324,6 +324,40 @@ https://zhuanlan.zhihu.com/p/345530242
 RTMP 协议详解
 https://www.cnblogs.com/jimodetiantang/p/8974075.html
 
+NAT 详解
+http://www.52im.net/thread-50-1-1.html
+
+DHCP 详解
+https://zhuanlan.zhihu.com/p/265293856
+https://zhuanlan.zhihu.com/p/89446304
+
+ONVIF 详解
+https://blog.csdn.net/zhizhengguan/article/details/109293913
+
+NTP 详解
+https://www.jianshu.com/p/8096c0477230
+https://www.jianshu.com/p/2cbde4ff4a01
+
+MQTT 详解
+https://www.jianshu.com/p/54e0238d3fae
+https://www.wenjiangs.com/doc/etuaya5fp
+https://zhuanlan.zhihu.com/p/458663373
+https://juejin.cn/post/6844903496098005006
+
+单播、组播、广播详解
+https://support.huawei.com/enterprise/zh/doc/EDOC1100105907
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
