@@ -56,6 +56,7 @@ https://juejin.cn/post/6844903555027959822
 H.264格式解析相关
 https://zhuanlan.zhihu.com/p/71928833
 https://www.jianshu.com/p/5f89ea2c3a28
+https://www.yuque.com/keith-an9fr/aab7xp/vng2pb
 Annex B and AVCC
 https://stackoverflow.com/questions/24884827/possible-locations-for-sequence-picture-parameter-sets-for-h-264-stream
 
